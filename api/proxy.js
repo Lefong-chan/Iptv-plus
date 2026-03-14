@@ -1,6 +1,7 @@
 // api/proxy.js
 const https = require('https');
 const http  = require('http');
+const jwt   = require('jsonwebtoken'); // Mila apetraka ny jsonwebtoken (npm install jsonwebtoken)
 
 function readBody(req) {
   return new Promise(function(resolve, reject) {
@@ -8,7 +9,10 @@ function readBody(req) {
     req.setEncoding('utf8');
     req.on('data', function(chunk) {
       data += chunk;
-      if (data.length > 6 * 1024 * 1024) { req.destroy(); reject(new Error('Fichier trop volumineux (max 6 Mo).')); }
+      if (data.length > 6 * 1024 * 1024) { 
+        req.destroy(); 
+        reject(new Error('Fichier trop volumineux (max 6 Mo).')); 
+      }
     });
     req.on('end',   function() { resolve(data); });
     req.on('error', reject);
@@ -71,13 +75,34 @@ function extractAttr(line, attr) {
   return m ? m[1].trim() : '';
 }
 
+// Handler lehibe
 module.exports = function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // 1. Fiarovana CORS: Ny ALLOWED_ORIGIN ihany no afaka miditra
+  const origin = req.headers.origin;
+  if (origin && origin !== process.env.ALLOWED_ORIGIN) {
+    return res.status(403).json({ error: 'Access denied: Invalid Origin' });
+  }
+  
+  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+
+  // 2. Fiarovana JWT: Manamarina raha manana token marina ny mpampiasa
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization token missing' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+    // Raha marina ny token, dia mitohy ny fanodinana ny request
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
 
   // POST : fichier M3U
   if (req.method === 'POST') {
