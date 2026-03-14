@@ -1,6 +1,7 @@
 // api/channels.js
 const https = require('https');
 const http  = require('http');
+const jwt   = require('jsonwebtoken'); // Mila npm install jsonwebtoken
 
 const REGIONS = [
   { id: 'af', name: 'Afghanistan', icon: '🇦🇫', url: 'https://iptv-org.github.io/iptv/countries/af.m3u' },
@@ -263,13 +264,32 @@ function extractAttr(line, attr) {
 }
 
 module.exports = function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // 1. Fiarovana CORS
+  const origin = req.headers.origin;
+  if (origin && origin !== process.env.ALLOWED_ORIGIN) {
+    return res.status(403).json({ error: 'Access denied: Invalid Origin' });
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
   if (req.method !== 'GET')     { res.status(405).json({ error: 'Méthode non autorisée.' }); return; }
+
+  // 2. Fiarovana JWT
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization token missing' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
 
   var id = req.query ? req.query.id : undefined;
 
